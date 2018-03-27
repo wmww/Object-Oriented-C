@@ -1,6 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "define_EVIL/define_EVIL.h"
+
+#define SPEW_A_THING(...) __VA_ARGS__
+#define SPEW_NOTHING(...)
+
+#define debug SPEW_A_THING
+//#define debug SPEW_NOTHING;
 
 struct _Scope
 {
@@ -9,8 +16,10 @@ struct _Scope
 	struct _Scope* next;
 };
 
-void * make_obj(void * data, void(*drop)(void*), struct _Scope ** scope)
+void * _make_obj(size_t size, void(*drop)(void*), struct _Scope ** scope)
 {
+	void * data = malloc(size);
+	memset(data, 0, size);
 	struct _Scope * tmp = *scope;
 	*scope = malloc(sizeof(struct _Scope));
 	(*scope)->data = data;
@@ -19,11 +28,18 @@ void * make_obj(void * data, void(*drop)(void*), struct _Scope ** scope)
 	return data;
 }
 
+void _Scope_drop(struct _Scope * scope)
+{
+	while (scope)
+	{
+		scope->drop(scope->data);
+		scope = scope->next;
+	}
+}
+
 #define COMMA() (),
 
 #define CHECK_VOID_void
-#define SPEW_A_THING(...) __VA_ARGS__
-#define SPEW_NOTHING(...)
 
 #define func_INTERNAL(type, name, a, b, c) \
 	type name##_WRAPPED(EXPAND b struct _Scope **); \
@@ -31,12 +47,8 @@ void * make_obj(void * data, void(*drop)(void*), struct _Scope ** scope)
 	{ \
 		struct _Scope* scope = NULL; \
 		EXPAND_CAT(SPEW_, CHECK_IF_THING(CHECK_VOID_##type)) (type ret =) name##_WRAPPED(EXPAND a &scope); \
-		while (scope) \
-		{ \
-			scope->drop(scope->data); \
-			scope = scope->next; \
-		} \
-		EXPAND_CAT(SPEW_, CHECK_IF_THING(CHECK_VOID_##type)) (return ret;) \
+		_Scope_drop(scope); \
+		return EXPAND_CAT(SPEW_, CHECK_IF_THING(CHECK_VOID_##type)) (ret) ; \
 	} \
 	type name##_WRAPPED(EXPAND b struct _Scope ** _scope) \
 
@@ -56,8 +68,8 @@ void * make_obj(void * data, void(*drop)(void*), struct _Scope ** scope)
 		(EXPAND MAP((ARGS_C, COMMA), __VA_ARGS__)()))
 
 #define make(type, name) \
-	printf(#type " created\n"); \
-	struct type * name##_OBJ = make_obj(malloc(sizeof(struct type)), &type##_DROP, _scope)
+	debug(printf(#type " created\n");) \
+	struct _##type##_class * name##_OBJ = _make_obj(sizeof(struct _##type##_class), &_##type##_drop, _scope)
 
 #define set(obj, prop, val) \
 	obj##_OBJ->prop = val
@@ -65,28 +77,33 @@ void * make_obj(void * data, void(*drop)(void*), struct _Scope ** scope)
 #define get(obj, prop) \
 	obj##_OBJ->prop
 
-struct TwoVals
+#define drop(name) \
+	void _##name##_drop_wrapped(struct _##name##_class * data); \
+	void _##name##_drop(void * data) \
+	{ \
+		debug(printf("dropping " #name "\n");) \
+		_##name##_drop_wrapped(data); \
+		_Scope_drop(((struct _##name##_class *)data)->_scope); \
+		free(data); \
+	} \
+	void _##name##_drop_wrapped(struct _##name##_class * data) \
+
+struct _TwoVals_class
 {
 	int a;
 	int b;
+	struct _Scope * _scope;
 };
 
-void TwoVals_DROP(void * data)
-{
-	printf("TwoVals_DROP()\n");
-	free(data);
-}
+drop(TwoVals) {}
 
-struct MyStruct
+struct _MyStruct_class
 {
 	int x, y, z;
+	struct _Scope * _scope;
 };
 
-void MyStruct_DROP(void * data)
-{
-	printf("MyStruct_DROP()\n");
-	free(data);
-}
+drop(MyStruct) {}
 
 func(void, do_nothing)
 {
