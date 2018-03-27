@@ -77,6 +77,13 @@ void _Scope_drop(struct _Scope * scope)
 #define get(obj, prop) \
 	obj##_OBJ->prop
 
+#define class(name, members) \
+	struct _##name##_class \
+	{ \
+		struct _Scope * _scope; \
+		EXPAND members \
+	}; \
+
 #define drop(name) \
 	void _##name##_drop_wrapped(struct _##name##_class * data); \
 	void _##name##_drop(void * data) \
@@ -88,20 +95,20 @@ void _Scope_drop(struct _Scope * scope)
 	} \
 	void _##name##_drop_wrapped(struct _##name##_class * data) \
 
-struct _TwoVals_class
-{
+// ABOVE THIS IS BOILERPLATE ==========================================
+
+class(TwoVals,
+(
 	int a;
 	int b;
-	struct _Scope * _scope;
-};
+));
 
 drop(TwoVals) {}
 
-struct _MyStruct_class
-{
+class(MyStruct,
+(
 	int x, y, z;
-	struct _Scope * _scope;
-};
+));
 
 drop(MyStruct) {}
 
