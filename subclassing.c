@@ -36,7 +36,7 @@ void _destroy_object(void *obj) {
   obj = NULL
 
 #define callmethod(obj, type, method, ...) /* Can't figure out a way to detect class of object. */ \
-	((struct _##type##_method_table *) obj->method_table)->method(IF_ELSE(IS_THING(__VA__ARGS__))(obj, __VA_ARGS__)(obj))
+	((struct _##type##_method_table *) obj->method_table)->method(IF_ELSE(IS_THING(__VA_ARGS__))(obj, __VA_ARGS__)(obj))
 
 #define setmethod(type, name, func) /* Has to be inside a function somewhere. Require it to be at top of main() somehow? */ \
 	_##type##_methods.name = func
