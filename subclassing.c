@@ -2,9 +2,6 @@
 #include <stdlib.h>
 #include "define_EVIL/define_EVIL.h"
 
-#define SPEW_A_THING(...) __VA_ARGS__
-#define SPEW_NOTHING(...)
-
 struct _Object_class {
 	void * method_table;
 };
@@ -39,17 +36,17 @@ void _destroy_object(void *obj) {
   obj = NULL
 
 #define callmethod(obj, type, method, ...) /* Can't figure out a way to detect class of object. */ \
-	((struct _##type##_method_table *) obj->method_table)->method (obj EXPAND_CAT(SPEW_, CHECK_IF_THING(__VA_ARGS__)) (, __VA_ARGS__))
+	((struct _##type##_method_table *) obj->method_table)->method(IF_ELSE(IS_THING(__VA__ARGS__))(obj, __VA_ARGS__)(obj))
 
 #define setmethod(type, name, func) /* Has to be inside a function somewhere. Require it to be at top of main() somehow? */ \
 	_##type##_methods.name = func
 
 // Example code below
 
-class(Example,Object,(
+class(Example, Object, (
   int a;
   int b;
-),(
+), (
   int (*add)(struct _Example_class * self);
 ))
 
