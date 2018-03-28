@@ -69,8 +69,7 @@ void _Scope_drop(struct _Scope * scope)
 
 #define make(type, name) \
 	debug(printf(#type " created\n");) \
-	struct _##type##_class * name##_OBJ = _make_obj(sizeof(struct _##type##_class), &_##type##_drop, _scope); \
-	name##_OBJ->method_table = &_##type##_methods
+	struct _##type##_class * name##_OBJ = _make_obj(sizeof(struct _##type##_class), &_##type##_drop, _scope)
 
 #define set(obj, prop, val) \
 	obj##_OBJ->prop = val
@@ -78,16 +77,12 @@ void _Scope_drop(struct _Scope * scope)
 #define get(obj, prop) \
 	obj##_OBJ->prop
 
-#define class(name, superclass, members, methods) \
+#define class(name, members) \
 	struct _##name##_class \
 	{ \
-		struct superclass; \
+		struct _Scope * _scope; \
 		EXPAND members \
 	}; \
-	struct \
-	{ \
-		EXPAND methods \
-	} _##name##_methods; \
 
 #define drop(name) \
 	void _##name##_drop_wrapped(struct _##name##_class * data); \
@@ -100,43 +95,20 @@ void _Scope_drop(struct _Scope * scope)
 	} \
 	void _##name##_drop_wrapped(struct _##name##_class * data) \
 
-#define callmethod(obj, type, method, ...) /* Can't figure out a way to detect class of object. */ \
-	((_##type##_methods *) get(obj, method_table))->##method##(obj, __VA_ARGS__)
-
-#define setmethod(type, name, func) \
-	_##type##_methods.##name## = func
-
-// TODO: method and defmethod macros doing argument wrapping like func and adding self pointer so we can have nicer syntax for declaring and defining methods.
-
-struct _Object_class {
-	struct _Scope * _scope;
-	void * method_table;
-};
-
 // ABOVE THIS IS BOILERPLATE ==========================================
 
-class(TwoVals, Object,
+class(TwoVals,
 (
 	int a;
 	int b;
-),
-(
-	int (*add)(struct _TwoVals_class * self_OBJ); // This syntax is... not the best.
 ));
-
-func(int, add, (struct _TwoVals_class *, self_OBJ)) // This is also not the best.
-{
-	return get(self, a) + get(self, b);
-}
-setmethod(TwoVals, add, &add);
 
 drop(TwoVals) {}
 
-class(MyStruct, Object,
+class(MyStruct,
 (
 	int x, y, z;
-),
-());
+));
 
 drop(MyStruct) {}
 
@@ -152,8 +124,7 @@ func(int, add_nums, (int, foo), (int, bar))
 	do_nothing();
 	set(vals, b, bar);
 	make(TwoVals, xyz);
-	callmethod(vals, TwoVals, add);
-	//return get(vals, a) + get(vals, b);
+	return get(vals, a) + get(vals, b);
 }
 
 int main()
