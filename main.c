@@ -34,16 +34,21 @@ void _Scope_drop(struct _Scope * scope)
 	}
 }
 
+#define _OBJ(name) _##name##_OBJ
+#define _CLASS(name) _##name##_CLASS
+#define _DROP_FUNC(name) _##name##_DROP
+#define _WRAPPED(name) EXPAND_CAT(_, EXPAND_CAT(name, _WRAPPED))
+
 #define _func_A(type, name, a, b, c) \
-	type name##_WRAPPED(EXPAND b struct _Scope **); \
+	type _WRAPPED(name)(EXPAND b struct _Scope **); \
 	type name c \
 	{ \
 		struct _Scope* scope = NULL; \
-		IF(NE(void, type))(type ret =) name##_WRAPPED(EXPAND a &scope); \
+		IF(NE(void, type))(type ret =) _WRAPPED(name)(EXPAND a &scope); \
 		_Scope_drop(scope); \
 		return IF(NE(void, type))(ret) ; \
 	} \
-	type name##_WRAPPED(EXPAND b struct _Scope ** _scope) \
+	type _WRAPPED(name)(EXPAND b struct _Scope ** _scope) \
 
 #define BOTH(a, b) a b
 #define SECOND(a, b) b
@@ -62,31 +67,31 @@ void _Scope_drop(struct _Scope * scope)
 
 #define make(type, name) \
 	debug(printf(#type " created\n");) \
-	struct _##type##_class * name##_OBJ = _make_obj(sizeof(struct _##type##_class), &_##type##_drop, _scope)
+	struct _CLASS(type) * _OBJ(name) = _make_obj(sizeof(struct _CLASS(type)), &_DROP_FUNC(type), _scope)
 
 #define set(obj, prop, val) \
-	obj##_OBJ->prop = val
+	_##obj##_OBJ->prop = val
 
 #define get(obj, prop) \
-	obj##_OBJ->prop
+	_##obj##_OBJ->prop
 
 #define class(name, members) \
-	struct _##name##_class \
+	struct _CLASS(name) \
 	{ \
 		struct _Scope * _scope; \
 		EXPAND members \
 	}; \
 
 #define drop(name) \
-	void _##name##_drop_wrapped(struct _##name##_class * data); \
-	void _##name##_drop(void * data) \
+	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data); \
+	void _DROP_FUNC(name)(void * data) \
 	{ \
 		debug(printf("dropping " #name "\n");) \
-		_##name##_drop_wrapped(data); \
-		_Scope_drop(((struct _##name##_class *)data)->_scope); \
+		_WRAPPED(_DROP_FUNC(name))(data); \
+		_Scope_drop(((struct _CLASS(name) *)data)->_scope); \
 		free(data); \
 	} \
-	void _##name##_drop_wrapped(struct _##name##_class * data) \
+	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data)
 
 // ABOVE THIS IS BOILERPLATE ==========================================
 
