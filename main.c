@@ -11,58 +11,77 @@
 #define _CLASS(name) _##name##_CLASS
 #define _TETHER(name) _##name##_TETHER
 #define _DROP_FUNC(name) _##name##_DROP
+#define _MAKE_FUNC(name) _##name##_MAKE
 #define _WRAPPED(name) EXPAND_CAT(_, EXPAND_CAT(name, _WRAPPED))
 
 typedef void _CLASS(void);
 
-#define _TETHER_FOR_TYPE(name) \
-	struct _TETHER(name) \
-	{ \
-		struct _CLASS(name) * data; \
-		void (*drop)(void*); \
-		struct _TETHER(void) * next; \
-		struct _TETHER(void) * prev; \
-	}; \
-
-_TETHER_FOR_TYPE(void);
-typedef struct _TETHER(void) _Tether;
-
-void * _make_zeroed_mem(size_t size)
+void * _alloc_zeroed_mem(size_t size)
 {
 	void * data = malloc(size);
 	memset(data, 0, size);
 	return data;
 }
 
-void _DROP_FUNC(_Tether)(_Tether * tether)
+struct _Scope
 {
-	CHECK(if (tether->prev){
-			fprintf(stderr, "WARNING: " TO_STRING(_DROP_FUNC(_Tether)) " called with non-starting tethe\n");
-		})
-	
-	while (tether)
+	void * data;
+	void (*drop)(void*);
+	struct _Scope * next;
+	struct _Scope * prev;
+};
+
+// can be sent a null scope, scope it is sent an subsequent scopes must be freeable
+void _Scope_list_drop(struct _Scope * start)
+{
+	if (start && start->prev)
+		start->prev->next = NULL;
+
+	while (start)
 	{
-		if (tether->drop)
-		{
-			tether->drop(tether->data);
-		}
-		_Tether * next = tether->next;
-		memset(tether, 0, sizeof(_Tether));
-		tether = next;
+		if (start->drop)
+			start->drop(start->data);
+
+		struct _Scope * next = start->next;
+		free(start);
+		start = next;
 	}
 }
 
+void _Scope_extract(struct _Scope * scope)
+{
+	if (scope->prev)
+		scope->prev->next = scope->next;
+
+	if (scope->next)
+		scope->next->prev = scope->prev;
+
+	scope->prev = NULL;
+	scope->next = NULL;
+}
+
+void _Scope_insert(struct _Scope * target, struct _Scope * scope)
+{
+	scope->prev = target;
+	scope->next = target->next;
+
+	if (target->next)
+		target->next->prev = scope;
+
+	target->next = scope;
+}
+
 #define _func_A(type, name, a, b, c) \
-	type _WRAPPED(name)(EXPAND b _Tether * tether); \
+	type _WRAPPED(name)(EXPAND b struct _Scope * _scope); \
 	type name c \
 	{ \
-		_Tether tether; \
-		memset(&tether, 0, sizeof(_Tether)); \
-		IF(NE(void, type))(type ret =) _WRAPPED(name)(EXPAND a &tether); \
-		_DROP_FUNC(_Tether)(&tether); \
+		struct _Scope scope; \
+		memset(&scope, 0, sizeof(struct _Scope)); \
+		IF(NE(void, type))(type ret =) _WRAPPED(name)(EXPAND a &scope); \
+		_Scope_list_drop(scope.next); \
 		return IF(NE(void, type))(ret) ; \
 	} \
-	type _WRAPPED(name)(EXPAND b _Tether * _tether) \
+	type _WRAPPED(name)(EXPAND b struct _Scope * _scope)
 
 #define BOTH(a, b) a b
 #define SECOND(a, b) b
@@ -83,25 +102,19 @@ void _DROP_FUNC(_Tether)(_Tether * tether)
 	struct _TETHER(type) _OBJ(name);
 
 #define make(type) \
-	(struct _TETHER(type)) \
-	{ \
-		.data = _make_zeroed_mem(sizeof(struct _CLASS(type))), \
-		.drop = &_DROP_FUNC(type), \
-		.next = NULL, \
-		.prev = NULL, \
-	} \
+	(_MAKE_FUNC(type)())
 
-#define assign(var, obj) \
-	_OBJ(var) = obj; \
-	_OBJ(var).next = _tether->next; \
-	_OBJ(var).prev = _tether; \
-	_tether->next = (_Tether *)&_OBJ(var); \
-	if (_OBJ(var).next) \
-		_OBJ(var).next->prev = (_Tether *)&_OBJ(var); \
+struct _Scope * _set_tmp_target;
+struct _Scope ** _set_tmp_scope;
 
-#define set(obj, prop, val) \
-	CHECK(if (!_OBJ(obj).data) { fprintf(stderr, "WARNING: null pointer\n"); }) \
-	_OBJ(obj).data->prop = val
+#define set(obj) \
+	_set_tmp_scope = &_OBJ(obj).scope; \
+	_set_tmp_target = _scope; \
+	_OBJ(obj) = _set_A
+
+#define _set_A(val) \
+	val; \
+	_Scope_insert(_set_tmp_target, *_set_tmp_scope);
 
 #define get(obj, prop) \
 	CHECK(_OBJ(obj).data ?) _OBJ(obj).data->prop CHECK(: fprintf(stderr, "WARNING: null pointer\n"))
@@ -109,18 +122,40 @@ void _DROP_FUNC(_Tether)(_Tether * tether)
 #define class(name, members) \
 	struct _CLASS(name) \
 	{ \
-		_Tether _tether; \
+		struct _Scope _scope; \
 		EXPAND members \
 	}; \
-	_TETHER_FOR_TYPE(name);
+	struct _TETHER(name) \
+	{ \
+		struct _CLASS(name) * data; \
+		struct _Scope * scope; \
+	}; \
+	void _DROP_FUNC(name)(void * data);
 
-#define drop(name) \
+#define func_make(name) \
+	void _WRAPPED(_MAKE_FUNC(name))(struct _CLASS(name) * data); \
+	struct _TETHER(name) _MAKE_FUNC(name)() \
+	{ \
+		debug(printf("making " #name "\n");) \
+		struct _CLASS(name) * data = _alloc_zeroed_mem(sizeof(struct _CLASS(name))); \
+		struct _Scope * scope = _alloc_zeroed_mem(sizeof(struct _Scope)); \
+		scope->data = data; \
+		scope->drop = _DROP_FUNC(name); \
+		return (struct _TETHER(name)) \
+		{ \
+			.data = data, \
+			.scope = scope, \
+		}; \
+	} \
+	void _WRAPPED(_MAKE_FUNC(name))(struct _CLASS(name) * data)
+
+#define func_drop(name) \
 	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data); \
 	void _DROP_FUNC(name)(void * data) \
 	{ \
 		debug(printf("dropping " #name "\n");) \
 		_WRAPPED(_DROP_FUNC(name))(data); \
-		_DROP_FUNC(_Tether)(&((struct _CLASS(name) *)data)->_tether); \
+		_Scope_list_drop(((struct _CLASS(name) *)data)->_scope.next);\
 		free(data); \
 	} \
 	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data)
@@ -133,30 +168,33 @@ class(TwoVals,
 	int b;
 ));
 
-drop(TwoVals) {}
+func_make(TwoVals) {}
+func_drop(TwoVals) {}
 
 class(MyStruct,
 (
 	int x, y, z;
 ));
 
-drop(MyStruct) {}
+func_make(MyStruct) {}
+func_drop(MyStruct) {}
 
 func(void, do_nothing)
 {
-	declare(MyStruct, aaa);
-	assign(aaa, make(MyStruct))
+	//declare(MyStruct, aaa);
+	//assign(aaa, make(MyStruct))
 }
 
 func(int, add_nums, (int, foo), (int, bar))
 {
 	declare(TwoVals, vals);
-	assign(vals, make(TwoVals));
-	set(vals, a, foo);
-	do_nothing();
-	set(vals, b, bar);
-	declare(TwoVals, xyz);
-	assign(xyz, make(TwoVals));
+	set (vals) (make(TwoVals));
+	//assign(vals, make(TwoVals));
+	//set(vals, a, foo);
+	//do_nothing();
+	//set(vals, b, bar);
+	//declare(TwoVals, xyz);
+	//assign(xyz, make(TwoVals));
 	return get(vals, a) + get(vals, b);
 }
 
