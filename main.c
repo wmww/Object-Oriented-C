@@ -71,6 +71,14 @@ void _Scope_insert(struct _Scope * target, struct _Scope * scope)
 	target->next = scope;
 }
 
+void _Scope_drop(struct _Scope * scope)
+{
+	if (!scope) return;
+	_Scope_extract(scope);
+	if (scope->drop)
+		scope->drop(scope->data);
+}
+
 #define _func_A(type, name, a, b, c) \
 	type _WRAPPED(name)(EXPAND b struct _Scope * _scope); \
 	type name c \
@@ -98,26 +106,23 @@ void _Scope_insert(struct _Scope * target, struct _Scope * scope)
 		(MAP(ARGS_B, __VA_ARGS__)), \
 		(MAP(ARGS_C, __VA_ARGS__)))
 
-#define declare(type, name) \
-	struct _TETHER(type) _OBJ(name);
+#define var(type, obj, val) \
+	struct _TETHER(type) _OBJ(obj) = val; \
+	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define make(type) \
-	(_MAKE_FUNC(type)())
+	_MAKE_FUNC(type)()
 
 struct _Scope * _set_tmp_target;
 struct _Scope ** _set_tmp_scope;
 
-#define set(obj) \
-	_set_tmp_scope = &_OBJ(obj).scope; \
-	_set_tmp_target = _scope; \
-	_OBJ(obj) = _set_A
+#define set(obj, val) \
+	_Scope_drop(_OBJ(obj).scope); \
+	_OBJ(obj) = val; \
+	_Scope_insert(_scope, _OBJ(obj).scope)
 
-#define _set_A(val) \
-	val; \
-	_Scope_insert(_set_tmp_target, *_set_tmp_scope);
-
-#define get(obj, prop) \
-	CHECK(_OBJ(obj).data ?) _OBJ(obj).data->prop CHECK(: fprintf(stderr, "WARNING: null pointer\n"))
+#define prop(obj, prop) \
+	_OBJ(obj).data->prop
 
 #define class(name, members) \
 	struct _CLASS(name) \
@@ -181,21 +186,18 @@ func_drop(MyStruct) {}
 
 func(void, do_nothing)
 {
-	//declare(MyStruct, aaa);
-	//assign(aaa, make(MyStruct))
+	var(MyStruct, aaa, make(MyStruct));
 }
 
 func(int, add_nums, (int, foo), (int, bar))
 {
-	declare(TwoVals, vals);
-	set (vals) (make(TwoVals));
-	//assign(vals, make(TwoVals));
-	//set(vals, a, foo);
-	//do_nothing();
-	//set(vals, b, bar);
-	//declare(TwoVals, xyz);
-	//assign(xyz, make(TwoVals));
-	return get(vals, a) + get(vals, b);
+	var(TwoVals, vals, make(TwoVals));
+	set(vals, make(TwoVals));
+	prop(vals, a) = foo;
+	do_nothing();
+	prop(vals, b) = bar;
+	var(TwoVals, xyz, make(TwoVals));
+	return prop(vals, a) + prop(vals, b);
 }
 
 int main()
