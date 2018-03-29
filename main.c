@@ -4,8 +4,9 @@
 #include "define_EVIL/define_EVIL.h"
 
 #define debug EXPAND_TRUE
-#define CHECK EXPAND_TRUE
 //#define debug EXPAND_FALSE;
+
+#define CHECK EXPAND_TRUE
 
 #define _OBJ(name) _##name##_OBJ
 #define _CLASS(name) _##name##_CLASS
@@ -13,6 +14,8 @@
 #define _DROP_FUNC(name) _##name##_DROP
 #define _MAKE_FUNC(name) _##name##_MAKE
 #define _WRAPPED(name) EXPAND_CAT(_, EXPAND_CAT(name, _WRAPPED))
+
+#define ENABLE_EQ_nil_nil
 
 typedef void _CLASS(void);
 
@@ -50,24 +53,19 @@ void _Scope_list_drop(struct _Scope * start)
 
 void _Scope_extract(struct _Scope * scope)
 {
-	if (scope->prev)
-		scope->prev->next = scope->next;
-
-	if (scope->next)
-		scope->next->prev = scope->prev;
-
+	if (!scope) return;
+	if (scope->prev) scope->prev->next = scope->next;
+	if (scope->next) scope->next->prev = scope->prev;
 	scope->prev = NULL;
 	scope->next = NULL;
 }
 
 void _Scope_insert(struct _Scope * target, struct _Scope * scope)
 {
+	if (!scope) return;
 	scope->prev = target;
 	scope->next = target->next;
-
-	if (target->next)
-		target->next->prev = scope;
-
+	if (target->next) target->next->prev = scope;
 	target->next = scope;
 }
 
@@ -107,7 +105,7 @@ void _Scope_drop(struct _Scope * scope)
 		(MAP(ARGS_C, __VA_ARGS__)))
 
 #define var(type, obj, val) \
-	struct _TETHER(type) _OBJ(obj) = val; \
+	struct _TETHER(type) _OBJ(obj) = IF_ELSE(EQ(nil, val))((struct _TETHER(type)){.data = NULL, .scope = NULL})(val); \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define make(type) \
@@ -118,7 +116,10 @@ struct _Scope ** _set_tmp_scope;
 
 #define set(obj, val) \
 	_Scope_drop(_OBJ(obj).scope); \
-	_OBJ(obj) = val; \
+	IF_ELSE(EQ(nil, val)) ( \
+		_OBJ(obj).data = NULL; \
+		_OBJ(obj).scope = NULL; \
+	)	(_OBJ(obj) = val;) \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define prop(obj, prop) \
@@ -192,11 +193,12 @@ func(void, do_nothing)
 func(int, add_nums, (int, foo), (int, bar))
 {
 	var(TwoVals, vals, make(TwoVals));
+	set(vals, nil);
 	set(vals, make(TwoVals));
 	prop(vals, a) = foo;
 	do_nothing();
 	prop(vals, b) = bar;
-	var(TwoVals, xyz, make(TwoVals));
+	var(TwoVals, xyz, nil);
 	return prop(vals, a) + prop(vals, b);
 }
 
