@@ -92,32 +92,21 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	return 0;
 }
 
-#define _func_A(type, name, a, b, c) \
-	type _WRAPPED(name)(EXPAND b struct _Scope * _scope); \
-	type name c \
+#define _GET_PARAMS_FUNCTOR_NO_END_COMMA(item, i) IF(NE(0, i))(,) EXPAND_TRUE item
+#define _GET_PARAMS_FUNCTOR(item, i) EXPAND_TRUE item,
+#define _GET_PARAM_NAMES_FUNCTOR(item, i) EXPAND_FALSE item,
+
+#define func(type, name, ...) \
+	type _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope); \
+	type name (MAP(_GET_PARAMS_FUNCTOR_NO_END_COMMA, __VA_ARGS__)) \
 	{ \
 		struct _Scope scope; \
 		memset(&scope, 0, sizeof(struct _Scope)); \
-		IF(NE(void, type))(type ret =) _WRAPPED(name)(EXPAND a &scope); \
+		IF(NE(void, type))(type ret =) _WRAPPED(name)(MAP(_GET_PARAM_NAMES_FUNCTOR, __VA_ARGS__) &scope); \
 		_Scope_list_drop(scope.next); \
 		return IF(NE(void, type))(ret) ; \
 	} \
-	type _WRAPPED(name)(EXPAND b struct _Scope * _scope)
-
-#define BOTH(a, b) a b
-#define SECOND(a, b) b
-
-#define ARGS_A(item, i) SECOND item,
-#define ARGS_B(item, i) BOTH item,
-#define ARGS_C(item, i) IF(NE(0, i))(,) BOTH item
-
-#define func(type, name, ...) \
-	_func_A( \
-		type, \
-		name, \
-		(MAP(ARGS_A, __VA_ARGS__)), \
-		(MAP(ARGS_B, __VA_ARGS__)), \
-		(MAP(ARGS_C, __VA_ARGS__)))
+	type _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope)
 
 #define var(type, obj, val) \
 	struct _TETHER(type) _OBJ(tmp_##obj); \
@@ -215,7 +204,7 @@ func(void, do_nothing)
 	var(MyStruct, bbb, move(aaa));
 }
 
-func(int, add_nums, (int, foo), (int, bar))
+func(int, add_nums, (int) foo, (int) bar)
 {
 	var(TwoVals, vals, make(TwoVals));
 	set(vals, nil);
