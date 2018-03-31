@@ -1,12 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include "define_EVIL/define_EVIL.h"
 
-#define debug EXPAND_TRUE
-//#define debug EXPAND_FALSE;
+// enables debug messages and checks for the framework itself
+#define ENABLE_DEBUG
 
-#define CHECK EXPAND_TRUE
+// for performence, makes using nil objects undefined behaviour
+// #define DISABLE_NIL_CHECKS
 
 #define _OBJ(name) EXPAND_CAT(EXPAND_CAT(_, name), _OBJECT)
 #define _CLASS(name) _##name##_CLASS
@@ -17,14 +19,57 @@
 
 #define ENABLE_EQ_nil_nil
 
+#ifdef DISABLE_NIL_CHECKS
+#define _CHECK_NIL FALSE
+#else
+#define _CHECK_NIL TRUE
+#endif
+
+#ifdef ENABLE_DEBUG
+#define _DEBUG TRUE
+#else
+#define _DEBUG FALSE
+#endif
+
 typedef void _CLASS(void);
 
-#define panic(message) _panic(__FILE__, __LINE__, message)
+#ifdef ENABLE_DEBUG
+const char * _current_func = NULL;
+int _stack_frame_count = 0;
+#endif
 
-int _panic(const char * file, int line, const char * message)
+#define panic(...) _panic(__FILE__, __func__, __LINE__, __VA_ARGS__)
+
+int _panic(const char * file, const char * func_name, int line, const char * format, ...)
 {
-	fprintf(stderr, "'%s' panicked on line %d: %s\n", file, line, message);
+	fprintf(stderr, "%s panicked on line %d: ", file, line);
+	va_list argptr;
+    va_start(argptr, format);
+    vfprintf(stderr, format, argptr);
+    va_end(argptr);
+	fprintf(stderr, "\n");
 	exit(1);
+	return 0;
+}
+
+#define debug_msg(...) _debug_msg(__FILE__, __func__, __LINE__, __VA_ARGS__)
+
+int _debug_msg(const char * file, const char * func_name, int line, const char * format, ...)
+{
+	const char * current_func = func_name;
+	#ifdef ENABLE_DEBUG
+	if (_current_func)
+		current_func = _current_func;
+	#endif
+	fprintf(stdout, "debug [%s:%d] ", file, line);
+	for (int i = 1; i < _stack_frame_count; i++)
+		fprintf(stdout, "  ");
+	fprintf(stdout, "%s(): ", current_func);
+	va_list argptr;
+    va_start(argptr, format);
+    vfprintf(stdout, format, argptr);
+    va_end(argptr);
+	fprintf(stdout, "\n");
 	return 0;
 }
 
@@ -110,6 +155,7 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	dest->scope->data = source->scope->data;
 	dest->scope->drop = source->scope->drop;
 	*((int*)dest->data) += 1; // add to the ref count
+	IF(_DEBUG)(debug_msg("incremented object[%p] ref count to %d", dest->data, *((int*)dest->data) + 1);)
 	return 0;
 }
 
@@ -154,8 +200,20 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 		struct _Scope scope; \
 		memset(&scope, 0, sizeof(struct _Scope)); \
 		MAP(_PUT_OBJ_PARAM_IN_SCOPE_FUNCTOR, __VA_ARGS__) \
+		IF(_DEBUG)( \
+			const char * calling_func = _current_func; \
+			debug_msg("calling %s()", #name); \
+			_current_func = #name; \
+			_stack_frame_count++; \
+		) \
 		IF(NE(void, _GET_RETURN_TYPE(type)))(_GET_RETURN_TYPE(type) ret =) _WRAPPED(name)(MAP(_GET_PARAM_NAMES_FUNCTOR, __VA_ARGS__) &scope); \
+		IF(_DEBUG)(debug_msg("dropping scope");) \
 		_Scope_list_drop(scope.next); \
+		IF(_DEBUG)( \
+			debug_msg("retuning"); \
+			_stack_frame_count--; \
+			_current_func = calling_func; \
+		) \
 		return IF(NE(void, _GET_RETURN_TYPE(type)))(ret) ; \
 	} \
 	_FUNCTION_HEADER(type, name, TRUE, __VA_ARGS__) \
@@ -166,6 +224,7 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	struct _TETHER(type) _OBJ(obj) = IF_ELSE(EQ(nil, val)) \
 										((struct _TETHER(type)){.data = NULL, .scope = NULL}) \
 										(val); \
+	IF(_DEBUG)(debug_msg("gave '%s' initial value %s[%p]", #obj, #type, val.data);) \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define make(type) \
@@ -177,9 +236,11 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 		// ternary is so the expansion can start with a concatable id, so nil checks will work
 
 #define move(obj) \
+	IF(_DEBUG)(debug_msg("moving object[%p] out of '%s'", _OBJ(obj).data, #obj) +) \
 	_move_tether _MOVE_SHARE_GET_TETHER(obj)
 
 #define share(obj) \
+	IF(_DEBUG)(debug_msg("sharing object[%p] from '%s'", _OBJ(obj).data, #obj) +) \
 	_share_tether _MOVE_SHARE_GET_TETHER(obj)
 
 struct _Scope * _set_tmp_target;
@@ -194,7 +255,12 @@ struct _Scope ** _set_tmp_scope;
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define prop(obj, prop) \
-	(CHECK(_OBJ(obj).data ?) _OBJ(obj).data CHECK(: _OBJ(obj).data + panic("accessed '" #prop "' from nil object '" #obj "'")))->prop
+	( \
+		IF_ELSE(_CHECK_NIL) \
+			(_OBJ(obj).data ? _OBJ(obj).data : _OBJ(obj).data + panic("accessed '%s' from nil object '%s'", #prop, #obj)) \
+			(_OBJ(obj).data) \
+	) \
+	->prop
 
 #define nil(type) (struct _TETHER(type)){.data = NULL, .scope = NULL}
 
@@ -218,8 +284,8 @@ struct _Scope ** _set_tmp_scope;
 	void _WRAPPED(_MAKE_FUNC(name))(struct _CLASS(name) * data); \
 	struct _TETHER(name) _MAKE_FUNC(name)() \
 	{ \
-		debug(printf("making " #name "\n");) \
 		struct _CLASS(name) * data = _alloc_zeroed_mem(sizeof(struct _CLASS(name))); \
+		IF(_DEBUG)(debug_msg("making %s[%p]", #name, data);) \
 		struct _Scope * scope = _alloc_zeroed_mem(sizeof(struct _Scope)); \
 		scope->data = data; \
 		scope->drop = _DROP_FUNC(name); \
@@ -235,18 +301,18 @@ struct _Scope ** _set_tmp_scope;
 	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data); \
 	void _DROP_FUNC(name)(void * data) \
 	{ \
-		CHECK(if (!data) panic("dropped nil object '" #name "");) \
+		IF(_DEBUG)(if (!data) panic("dropped nil %s", #name);) \
 		if (((struct _CLASS(name) *)data)->_ref_count > 0) \
 		{ \
 			((struct _CLASS(name) *)data)->_ref_count--; \
-			debug(printf("dropping reference to '" #name "'\n");) \
+			IF(_DEBUG)(debug_msg("decremented %s[%p] ref count to %d", #name, data, ((struct _CLASS(name) *)data)->_ref_count + 1);) \
 		} \
 		else \
 		{ \
-			debug(printf("dropping '" #name "'\n");) \
+			IF(_DEBUG)(debug_msg("dropping %s[%p]", #name, data);) \
 			_WRAPPED(_DROP_FUNC(name))(data); \
 			_Scope_list_drop(((struct _CLASS(name) *)data)->_scope.next);\
-			CHECK(memset(data, 0, sizeof(struct _CLASS(name)));) \
+			IF(_DEBUG)(memset(data, 0, sizeof(struct _CLASS(name)));) \
 			free(data); \
 		} \
 	} \
@@ -285,6 +351,7 @@ func(int, add_nums, (int) foo, (int) bar)
 	prop(vals, b) = foo;
 	var(MyStruct, result, do_nothing(share(vals)));
 	printf("back in add_nums\n");
+	move(vals);
 	return prop(vals, a) + prop(vals, b);
 }
 
