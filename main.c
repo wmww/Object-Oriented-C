@@ -19,6 +19,15 @@
 
 typedef void _CLASS(void);
 
+#define panic(message) _panic(__FILE__, __LINE__, message)
+
+int _panic(const char * file, int line, const char * message)
+{
+	fprintf(stderr, "'%s' panicked on line %d: %s\n", file, line, message);
+	exit(1);
+	return 0;
+}
+
 void * _alloc_zeroed_mem(size_t size)
 {
 	void * data = malloc(size);
@@ -136,7 +145,7 @@ struct _Scope ** _set_tmp_scope;
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define prop(obj, prop) \
-	_OBJ(obj).data->prop
+	(CHECK(_OBJ(obj).data ?) _OBJ(obj).data CHECK(: _OBJ(obj).data + panic("accessed '" #prop "' from nil object '" #obj "'")))->prop
 
 #define class(name, members) \
 	struct _CLASS(name) \
@@ -208,7 +217,7 @@ func(int, add_nums, (int) foo, (int) bar)
 {
 	var(TwoVals, vals, make(TwoVals));
 	set(vals, nil);
-	set(vals, make(TwoVals));
+	//set(vals, make(TwoVals));
 	prop(vals, a) = foo;
 	do_nothing();
 	prop(vals, b) = bar;
