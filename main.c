@@ -96,6 +96,7 @@ struct _GenericTether
 // must return int for stupid reasons
 int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 {
+	_Scope_extract(source->scope);
 	*dest = *source;
 	memset(source, 0, sizeof(struct _GenericTether));
 	return 0;
@@ -227,6 +228,8 @@ func((MyStruct), do_nothing, ((TwoVals) vals))
 {
 	var(TwoVals, xyz, move(vals));
 	var(MyStruct, aaa, make(MyStruct));
+	var(MyStruct, bbb, make(MyStruct));
+	printf("about to return\n");
 	return move(aaa);
 }
 
@@ -237,6 +240,7 @@ func(int, add_nums, (int) foo, (int) bar)
 	set(vals, make(TwoVals));
 	prop(vals, a) = foo;
 	do_nothing(move(vals));
+	printf("back in add_nums\n");
 	prop(vals, b) = bar;
 	var(TwoVals, xyz, nil);
 	return prop(vals, a) + prop(vals, b);
