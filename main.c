@@ -102,6 +102,17 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	return 0;
 }
 
+// must return int for stupid reasons
+int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
+{
+	*dest = *source;
+	dest->scope = _alloc_zeroed_mem(sizeof(struct _Scope));
+	dest->scope->data = source->scope->data;
+	dest->scope->drop = source->scope->drop;
+	*((int*)dest->data) += 1; // add to the ref count
+	return 0;
+}
+
 #define _GET_TYPE_A(item) item EXPAND_FALSE (
 #define _GET_TYPE(item) _GET_TYPE_A item )
 
@@ -160,10 +171,16 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 #define make(type) \
 	_MAKE_FUNC(type)()
 
-#define move(obj) \
-	_move_tether((struct _GenericTether *)&_OBJ(tmp_##obj), (struct _GenericTether *)&_OBJ(obj)) \
+#define _MOVE_SHARE_GET_TETHER(obj) \
+	((struct _GenericTether *)&_OBJ(tmp_##obj), (struct _GenericTether *)&_OBJ(obj)) \
 		? _OBJ(tmp_##obj) : _OBJ(tmp_##obj)
 		// ternary is so the expansion can start with a concatable id, so nil checks will work
+
+#define move(obj) \
+	_move_tether _MOVE_SHARE_GET_TETHER(obj)
+
+#define share(obj) \
+	_share_tether _MOVE_SHARE_GET_TETHER(obj)
 
 struct _Scope * _set_tmp_target;
 struct _Scope ** _set_tmp_scope;
@@ -184,6 +201,9 @@ struct _Scope ** _set_tmp_scope;
 #define class(name, members) \
 	struct _CLASS(name) \
 	{ \
+		/* currently ref count is assumed to be the first arg */ \
+		/* always 1 less then it should be (zero when there is one owner */ \
+		int _ref_count; \
 		struct _Scope _scope; \
 		EXPAND members \
 	}; \
@@ -215,10 +235,20 @@ struct _Scope ** _set_tmp_scope;
 	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data); \
 	void _DROP_FUNC(name)(void * data) \
 	{ \
-		debug(printf("dropping " #name "\n");) \
-		_WRAPPED(_DROP_FUNC(name))(data); \
-		_Scope_list_drop(((struct _CLASS(name) *)data)->_scope.next);\
-		free(data); \
+		CHECK(if (!data) panic("dropped nil object '" #name "");) \
+		if (((struct _CLASS(name) *)data)->_ref_count > 0) \
+		{ \
+			((struct _CLASS(name) *)data)->_ref_count--; \
+			debug(printf("dropping reference to '" #name "'\n");) \
+		} \
+		else \
+		{ \
+			debug(printf("dropping '" #name "'\n");) \
+			_WRAPPED(_DROP_FUNC(name))(data); \
+			_Scope_list_drop(((struct _CLASS(name) *)data)->_scope.next);\
+			CHECK(memset(data, 0, sizeof(struct _CLASS(name)));) \
+			free(data); \
+		} \
 	} \
 	void _WRAPPED(_DROP_FUNC(name))(struct _CLASS(name) * data)
 
@@ -243,22 +273,19 @@ func_drop(MyStruct) {}
 
 func((MyStruct), do_nothing, ((TwoVals) vals))
 {
-	var(MyStruct, aaa, make(MyStruct));
 	var(MyStruct, bbb, make(MyStruct));
 	printf("about to return\n");
-	return move(aaa);
+	return move(bbb);
 }
 
 func(int, add_nums, (int) foo, (int) bar)
 {
 	var(TwoVals, vals, make(TwoVals));
-	move(vals);
-	prop(vals, a) = foo;
-	do_nothing(move(vals));
+	prop(vals, a) = bar;
+	prop(vals, b) = foo;
+	var(MyStruct, result, do_nothing(share(vals)));
 	printf("back in add_nums\n");
-	//prop(vals, b) = bar;
-	//var(TwoVals, xyz, nil);
-	return 8; //prop(vals, a) + prop(vals, b);
+	return prop(vals, a) + prop(vals, b);
 }
 
 int main()
