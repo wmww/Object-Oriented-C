@@ -117,18 +117,19 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 #define _GET_PARAMS_FUNCTOR_NO_END_COMMA(item, i) IF(NE(0, i))(,) _GET_PERAM(item, TRUE, FALSE)
 #define _GET_PARAMS_FUNCTOR(item, i) _GET_PERAM(item, TRUE, TRUE),
 #define _GET_PARAM_NAMES_FUNCTOR(item, i) _GET_PERAM(item, FALSE, TRUE),
+#define _GET_RETURN_TYPE(type) IF_ELSE(HAS_PEREN(type))(struct _TETHER(EXPAND type))(type)
 
 #define func(type, name, ...) \
-	type _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope); \
-	type name (MAP(_GET_PARAMS_FUNCTOR_NO_END_COMMA, __VA_ARGS__)) \
+	_GET_RETURN_TYPE(type) _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope); \
+	_GET_RETURN_TYPE(type) name (MAP(_GET_PARAMS_FUNCTOR_NO_END_COMMA, __VA_ARGS__)) \
 	{ \
 		struct _Scope scope; \
 		memset(&scope, 0, sizeof(struct _Scope)); \
-		IF(NE(void, type))(type ret =) _WRAPPED(name)(MAP(_GET_PARAM_NAMES_FUNCTOR, __VA_ARGS__) &scope); \
+		IF(NE(void, _GET_RETURN_TYPE(type)))(_GET_RETURN_TYPE(type) ret =) _WRAPPED(name)(MAP(_GET_PARAM_NAMES_FUNCTOR, __VA_ARGS__) &scope); \
 		_Scope_list_drop(scope.next); \
-		return IF(NE(void, type))(ret) ; \
+		return IF(NE(void, _GET_RETURN_TYPE(type)))(ret) ; \
 	} \
-	type _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope)
+	_GET_RETURN_TYPE(type) _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope)
 
 #define var(type, obj, val) \
 	struct _TETHER(type) _OBJ(tmp_##obj); \
@@ -159,6 +160,8 @@ struct _Scope ** _set_tmp_scope;
 
 #define prop(obj, prop) \
 	(CHECK(_OBJ(obj).data ?) _OBJ(obj).data CHECK(: _OBJ(obj).data + panic("accessed '" #prop "' from nil object '" #obj "'")))->prop
+
+#define nil(type) (struct _TETHER(type)){.data = NULL, .scope = NULL}
 
 #define class(name, members) \
 	struct _CLASS(name) \
@@ -220,11 +223,11 @@ class(MyStruct,
 func_make(MyStruct) {}
 func_drop(MyStruct) {}
 
-func(void, do_nothing, ((TwoVals) vals))
+func((MyStruct), do_nothing, ((TwoVals) vals))
 {
 	var(TwoVals, xyz, move(vals));
 	var(MyStruct, aaa, make(MyStruct));
-	var(MyStruct, bbb, move(aaa));
+	return move(aaa);
 }
 
 func(int, add_nums, (int) foo, (int) bar)
