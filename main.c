@@ -119,13 +119,17 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 #define _GET_PARAMS_FUNCTOR(item, i) _GET_PERAM(item, TRUE, TRUE),
 #define _GET_PARAM_NAMES_FUNCTOR(item, i) _GET_PERAM(item, FALSE, TRUE),
 #define _GET_RETURN_TYPE(type) IF_ELSE(HAS_PEREN(type))(struct _TETHER(EXPAND type))(type)
+#define _PUT_OBJ_PARAM_IN_SCOPE_FUNCTOR(item, i) IF(HAS_PEREN(item))(_Scope_insert(&scope, _OBJ(EXPAND_FALSE EXPAND item).scope);)
 
+// TODO: warn on unused object return
+// TODO: drop object arguments into function scope
 #define func(type, name, ...) \
 	_GET_RETURN_TYPE(type) _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope); \
 	_GET_RETURN_TYPE(type) name (MAP(_GET_PARAMS_FUNCTOR_NO_END_COMMA, __VA_ARGS__)) \
 	{ \
 		struct _Scope scope; \
 		memset(&scope, 0, sizeof(struct _Scope)); \
+		MAP(_PUT_OBJ_PARAM_IN_SCOPE_FUNCTOR, __VA_ARGS__) \
 		IF(NE(void, _GET_RETURN_TYPE(type)))(_GET_RETURN_TYPE(type) ret =) _WRAPPED(name)(MAP(_GET_PARAM_NAMES_FUNCTOR, __VA_ARGS__) &scope); \
 		_Scope_list_drop(scope.next); \
 		return IF(NE(void, _GET_RETURN_TYPE(type)))(ret) ; \
@@ -226,7 +230,6 @@ func_drop(MyStruct) {}
 
 func((MyStruct), do_nothing, ((TwoVals) vals))
 {
-	var(TwoVals, xyz, move(vals));
 	var(MyStruct, aaa, make(MyStruct));
 	var(MyStruct, bbb, make(MyStruct));
 	printf("about to return\n");
@@ -236,14 +239,12 @@ func((MyStruct), do_nothing, ((TwoVals) vals))
 func(int, add_nums, (int) foo, (int) bar)
 {
 	var(TwoVals, vals, make(TwoVals));
-	set(vals, nil);
-	set(vals, make(TwoVals));
 	prop(vals, a) = foo;
 	do_nothing(move(vals));
 	printf("back in add_nums\n");
-	prop(vals, b) = bar;
-	var(TwoVals, xyz, nil);
-	return prop(vals, a) + prop(vals, b);
+	//prop(vals, b) = bar;
+	//var(TwoVals, xyz, nil);
+	return 8; //prop(vals, a) + prop(vals, b);
 }
 
 int main()
