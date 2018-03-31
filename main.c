@@ -5,7 +5,7 @@
 #include "define_EVIL/define_EVIL.h"
 
 // enables debug messages and checks for the framework itself
-#define ENABLE_DEBUG
+// #define ENABLE_DEBUG
 
 // for performence, makes using nil objects undefined behaviour
 // #define DISABLE_NIL_CHECKS
@@ -62,8 +62,10 @@ int _debug_msg(const char * file, const char * func_name, int line, const char *
 		current_func = _current_func;
 	#endif
 	fprintf(stdout, "debug [%s:%d] ", file, line);
+	#ifdef ENABLE_DEBUG
 	for (int i = 1; i < _stack_frame_count; i++)
 		fprintf(stdout, "  ");
+	#endif
 	fprintf(stdout, "%s(): ", current_func);
 	va_list argptr;
     va_start(argptr, format);
@@ -202,7 +204,8 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 		MAP(_PUT_OBJ_PARAM_IN_SCOPE_FUNCTOR, __VA_ARGS__) \
 		IF(_DEBUG)( \
 			const char * calling_func = _current_func; \
-			debug_msg("calling %s()", #name); \
+			if (_current_func) \
+				debug_msg("calling %s()", #name); \
 			_current_func = #name; \
 			_stack_frame_count++; \
 		) \
@@ -224,7 +227,7 @@ int _share_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	struct _TETHER(type) _OBJ(obj) = IF_ELSE(EQ(nil, val)) \
 										((struct _TETHER(type)){.data = NULL, .scope = NULL}) \
 										(val); \
-	IF(_DEBUG)(debug_msg("gave '%s' initial value %s[%p]", #obj, #type, val.data);) \
+	IF(_DEBUG)(debug_msg("gave '%s' initial value %s[%p]", #obj, #type, _OBJ(obj).data);) \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define make(type) \
@@ -247,11 +250,13 @@ struct _Scope * _set_tmp_target;
 struct _Scope ** _set_tmp_scope;
 
 #define set(obj, val) \
+	_OBJ(tmp_##obj) = val; \
 	_Scope_drop(_OBJ(obj).scope); \
 	IF_ELSE(EQ(nil, val)) ( \
 		_OBJ(obj).data = NULL; \
 		_OBJ(obj).scope = NULL; \
-	)	(_OBJ(obj) = val;) \
+	)	(_OBJ(obj) = _OBJ(tmp_##obj);) \
+	IF(_DEBUG)(debug_msg("'%s' set to object[%p]", #obj, _OBJ(obj).data);) \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define prop(obj, prop) \
@@ -346,13 +351,9 @@ func((MyStruct), do_nothing, ((TwoVals) vals))
 
 func(int, add_nums, (int) foo, (int) bar)
 {
-	var(TwoVals, vals, make(TwoVals));
-	prop(vals, a) = bar;
-	prop(vals, b) = foo;
-	var(MyStruct, result, do_nothing(share(vals)));
-	printf("back in add_nums\n");
-	move(vals);
-	return prop(vals, a) + prop(vals, b);
+	var(MyStruct, result, do_nothing(nil(TwoVals)));
+	set(result, move(result));
+	return 7;
 }
 
 int main()
