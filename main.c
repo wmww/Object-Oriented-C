@@ -8,9 +8,9 @@
 
 #define CHECK EXPAND_TRUE
 
-#define _OBJ(name) _##name##_OBJ
+#define _OBJ(name) EXPAND_CAT(EXPAND_CAT(_, name), _OBJECT)
 #define _CLASS(name) _##name##_CLASS
-#define _TETHER(name) _##name##_TETHER
+#define _TETHER(name) EXPAND_CAT(EXPAND_CAT(_, name), _TETHER)
 #define _DROP_FUNC(name) _##name##_DROP
 #define _MAKE_FUNC(name) _##name##_MAKE
 #define _WRAPPED(name) EXPAND_CAT(_, EXPAND_CAT(name, _WRAPPED))
@@ -101,9 +101,22 @@ int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
 	return 0;
 }
 
-#define _GET_PARAMS_FUNCTOR_NO_END_COMMA(item, i) IF(NE(0, i))(,) EXPAND_TRUE item
-#define _GET_PARAMS_FUNCTOR(item, i) EXPAND_TRUE item,
-#define _GET_PARAM_NAMES_FUNCTOR(item, i) EXPAND_FALSE item,
+#define _GET_TYPE_A(item) item EXPAND_FALSE (
+#define _GET_TYPE(item) _GET_TYPE_A item )
+
+#define _GET_OBJ_PERAM(item, with_type, with_tmps)\
+	EXPAND_##with_type(struct _TETHER(_GET_TYPE(item))) \
+	_OBJ(EXPAND_FALSE item) \
+	IF(with_tmps) \
+		(, IF_ELSE(with_type) \
+			(struct _TETHER(_GET_TYPE(item)) _OBJ(EXPAND_CAT(tmp_, EXPAND_FALSE item))) \
+			((struct _TETHER(_GET_TYPE(item))) {}))
+#define _GET_PERAM(item, with_type, with_tmps) IF_ELSE(HAS_PEREN(item)) \
+										(_GET_OBJ_PERAM(EXPAND item, with_type, with_tmps)) \
+										(EXPAND_##with_type item)
+#define _GET_PARAMS_FUNCTOR_NO_END_COMMA(item, i) IF(NE(0, i))(,) _GET_PERAM(item, TRUE, FALSE)
+#define _GET_PARAMS_FUNCTOR(item, i) _GET_PERAM(item, TRUE, TRUE),
+#define _GET_PARAM_NAMES_FUNCTOR(item, i) _GET_PERAM(item, FALSE, TRUE),
 
 #define func(type, name, ...) \
 	type _WRAPPED(name)(MAP(_GET_PARAMS_FUNCTOR, __VA_ARGS__) struct _Scope * _scope); \
@@ -207,8 +220,9 @@ class(MyStruct,
 func_make(MyStruct) {}
 func_drop(MyStruct) {}
 
-func(void, do_nothing)
+func(void, do_nothing, ((TwoVals) vals))
 {
+	var(TwoVals, xyz, move(vals));
 	var(MyStruct, aaa, make(MyStruct));
 	var(MyStruct, bbb, move(aaa));
 }
@@ -217,9 +231,9 @@ func(int, add_nums, (int) foo, (int) bar)
 {
 	var(TwoVals, vals, make(TwoVals));
 	set(vals, nil);
-	//set(vals, make(TwoVals));
+	set(vals, make(TwoVals));
 	prop(vals, a) = foo;
-	do_nothing();
+	do_nothing(move(vals));
 	prop(vals, b) = bar;
 	var(TwoVals, xyz, nil);
 	return prop(vals, a) + prop(vals, b);
