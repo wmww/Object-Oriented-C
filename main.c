@@ -75,6 +75,21 @@ void _Scope_drop(struct _Scope * scope)
 	_Scope_extract(scope);
 	if (scope->drop)
 		scope->drop(scope->data);
+	free(scope);
+}
+
+struct _GenericTether
+{
+	void * data;
+	struct _Scope * scope;
+} _tmp_generic_tether;
+
+// must return int for stupid reasons
+int _move_tether(struct _GenericTether * dest, struct _GenericTether * source)
+{
+	*dest = *source;
+	memset(source, 0, sizeof(struct _GenericTether));
+	return 0;
 }
 
 #define _func_A(type, name, a, b, c) \
@@ -105,11 +120,20 @@ void _Scope_drop(struct _Scope * scope)
 		(MAP(ARGS_C, __VA_ARGS__)))
 
 #define var(type, obj, val) \
-	struct _TETHER(type) _OBJ(obj) = IF_ELSE(EQ(nil, val))((struct _TETHER(type)){.data = NULL, .scope = NULL})(val); \
+	struct _TETHER(type) _OBJ(tmp_##obj); \
+	(void) _OBJ(tmp_##obj); \
+	struct _TETHER(type) _OBJ(obj) = IF_ELSE(EQ(nil, val)) \
+										((struct _TETHER(type)){.data = NULL, .scope = NULL}) \
+										(val); \
 	_Scope_insert(_scope, _OBJ(obj).scope)
 
 #define make(type) \
 	_MAKE_FUNC(type)()
+
+#define move(obj) \
+	_move_tether((struct _GenericTether *)&_OBJ(tmp_##obj), (struct _GenericTether *)&_OBJ(obj)) \
+		? _OBJ(tmp_##obj) : _OBJ(tmp_##obj)
+		// ternary is so the expansion can start with a concatable id, so nil checks will work
 
 struct _Scope * _set_tmp_target;
 struct _Scope ** _set_tmp_scope;
@@ -188,6 +212,7 @@ func_drop(MyStruct) {}
 func(void, do_nothing)
 {
 	var(MyStruct, aaa, make(MyStruct));
+	var(MyStruct, bbb, move(aaa));
 }
 
 func(int, add_nums, (int, foo), (int, bar))
