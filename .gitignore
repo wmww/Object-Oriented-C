@@ -2,3 +2,4 @@ build*/
 a.out
 *.o
 *.gch
+*_bin
